@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Orange</title>
+<style>
+:root{--bg:#fff6ec;--side:#ffe7cf;--card:#fff;--text:#2a1a0c;--muted:#8a6a4c;--accent:#ff7a00;--line:#f1d9c0;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1108;--side:#140c05;--card:#27180b;--text:#fff1e3;--muted:#d1b090;--line:#4a2f16}}
+:root[data-theme="dark"]{--bg:#1b1108;--side:#140c05;--card:#27180b;--text:#fff1e3;--muted:#d1b090;--line:#4a2f16}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex}
+#side{width:220px;background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:12px;gap:4px;flex-shrink:0;overflow:auto}
+.logo{display:flex;align-items:center;gap:8px;font-weight:800;font-size:22px;margin-bottom:10px}
+.ch{padding:8px 10px;border-radius:8px;cursor:pointer;color:var(--muted);font-weight:600}
+.ch.on,.ch:hover{background:var(--card);color:var(--text)}
+h4{margin:14px 0 4px;font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:1px}
+.peer{font-size:14px;padding:3px 10px;color:var(--text)}
+.peer:before{content:"●";color:#3ba55d;margin-right:6px;font-size:10px}
+#main{flex:1;display:flex;flex-direction:column;min-width:0}
+#top{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line);font-weight:700}
+button{background:var(--accent);color:#fff;border:0;border-radius:999px;padding:8px 16px;font-weight:700;font-size:14px;cursor:pointer}
+button.alt{background:var(--card);color:var(--text);border:1px solid var(--line)}
+button.red{background:#d83c3e}
+#call{display:none;padding:10px;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--line);background:var(--side)}
+#call video{width:200px;max-width:45%;border-radius:12px;background:#000;aspect-ratio:4/3;object-fit:cover}
+#msgs{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.m b{color:var(--accent)} .m small{color:var(--muted);margin-left:6px}
+.m div{white-space:pre-wrap;word-break:break-word}
+#bar{display:flex;gap:8px;padding:12px}
+#in{flex:1;padding:12px 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:16px}
+#top{flex-wrap:wrap;gap:8px}#find{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);margin-top:6px}#q{flex:1;margin:0 4px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);min-width:120px}.hit{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;cursor:pointer}.hit small{color:var(--muted)}#hits .ch{font-size:14px}
+#note{padding:20px;color:var(--muted);text-align:center}
+@media (max-width:600px){#side{width:120px}.logo span{display:none}}
+</style>
+</head>
+<body>
+<div id="side">
+  <div class="logo"><svg width="32" height="32" viewBox="0 0 40 40"><rect width="40" height="40" rx="11" fill="#ff7a00"/><path d="M10 17a14 14 0 0 1 20 0M14 22a8.5 8.5 0 0 1 12 0" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/><circle cx="20" cy="28" r="2.6" fill="#fff"/></svg><span>orange</span></div>
+  <h4>Channels</h4>
+  <div id="chs"></div>
+  <h4>Direct messages</h4>
+  <div id="dms"></div>
+  <input id="find" placeholder="Find people…" autocomplete="off">
+  <div id="hits"></div>
+  <h4>Online</h4>
+  <div id="peers"></div>
+</div>
+<div id="main">
+  <div id="top"><span id="title"># general</span><input id="q" placeholder="🔍 Search messages" autocomplete="off">
+    <span><button class="alt" id="vc">🎤 Voice</button> <button class="alt" id="vid">📹 Video</button> <button class="red" id="end" style="display:none">Leave call</button></span>
+  </div>
+  <div id="call"></div>
+  <div id="msgs"></div>
+  <div id="bar"><input id="in" placeholder="Message #general" autocomplete="off"><button id="send">Send</button></div>
+</div>
+<script>
+(async function(){
+var CHANNELS=["general","random","gaming"],cur="general",db,user,room,me,myPeer=null,unsub=null,names={},dmWith=null,partners={};
+function dmPath(id){return "dm/"+[me,id].sort().join("_")+"/messages"}
+function path(){return dmWith?dmPath(dmWith):"ch/"+cur+"/messages"}
+function link(owner,other){return db.collection("inbox/"+owner+"/from").doc(other).set({ts:Date.now()})}
+var msgs=document.getElementById("msgs"),inp=document.getElementById("in");
+var pcs={},local=null,inCall=false;
+function note(t){msgs.innerHTML="";var d=document.createElement("div");d.id="note";d.textContent=t;msgs.appendChild(d)}
+[db,user,room]=await Promise.all([claude.use("db"),claude.use("user"),claude.use("room")]);
+if(user)try{me=await user.id()}catch(e){}
+function renderChs(){var c=document.getElementById("chs");c.innerHTML="";CHANNELS.forEach(function(n){var d=document.createElement("div");d.className="ch"+(n===cur&&!dmWith?" on":"");d.textContent="# "+n;d.onclick=function(){cur=n;dmWith=null;renderChs();load()};c.appendChild(d)});renderDms()}
+function renderDms(){var c=document.getElementById("dms");c.innerHTML="";Object.keys(partners).forEach(function(id){var d=document.createElement("div");d.className="ch"+(dmWith===id?" on":"");d.textContent="@ "+(names[id]||"Someone");d.onclick=function(){dmWith=id;renderChs();load()};c.appendChild(d)})}
+async function nameOf(id){if(!id)return"Someone";if(names[id])return names[id];try{var p=await user.profiles([id]);names[id]=(p[id]&&p[id].name)||"Someone"}catch(e){names[id]="Someone"}return names[id]}
+function load(){
+  var lbl=dmWith?"@ "+(names[dmWith]||"Direct message"):"# "+cur;document.getElementById("title").textContent=lbl;inp.placeholder="Message "+lbl;
+  if(unsub)unsub();
+  if(!db){note("Open this page while signed in to claude.ai to chat.");return}
+  if(dmWith&&!me){note("Direct messages need a signed-in account.");return}
+  unsub=db.collection(path()).orderBy("ts","asc").limit(200).onSnapshot(async function(s){
+    var docs=s.docs.map(function(d){return d.data()});
+    var ids=[...new Set(docs.map(function(d){return d.uid}))];
+    for(var i=0;i<ids.length;i++)await nameOf(ids[i]);
+    msgs.innerHTML="";
+    if(!docs.length){note("No messages yet. Say hi 🍊");return}
+    docs.forEach(function(m){var d=document.createElement("div");d.className="m";var b=document.createElement("b");b.textContent=names[m.uid]||"Someone";var t=document.createElement("small");t.textContent=new Date(m.ts).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});var x=document.createElement("div");x.textContent=m.text;var h=document.createElement("span");h.appendChild(b);h.appendChild(t);d.appendChild(h);d.appendChild(x);msgs.appendChild(d)});
+    msgs.scrollTop=msgs.scrollHeight;
+  },function(e){note("Can’t load messages: "+e.message)});
+}
+async function send(){var v=inp.value.trim();if(!v||!db)return;inp.value="";
+  try{await db.collection(path()).doc("m"+Date.now()+Math.random().toString(36).slice(2,6)).set({uid:me||null,text:v.slice(0,2000),ts:Date.now()});if(dmWith){await link(dmWith,me);await link(me,dmWith)}}catch(e){note("Couldn’t send: "+e.message+" (you need contribute access)")}}
+document.getElementById("send").onclick=send;
+inp.onkeydown=function(e){if(e.key==="Enter")send()};
+/* DM inbox: people who have messaged me or whom I messaged */
+if(db&&me)db.collection("inbox/"+me+"/from").onSnapshot(async function(s){partners={};s.docs.forEach(function(d){partners[d.id]=1});await Promise.all(Object.keys(partners).map(nameOf));renderDms()},function(){});
+/* find people */
+var find=document.getElementById("find"),hits=document.getElementById("hits");
+async function doFind(){hits.innerHTML="";if(!user||!me)return;var r=[];try{r=await user.search(find.value.trim())}catch(e){}
+  r.forEach(function(h){if(h.id===me)return;var d=document.createElement("div");d.className="ch";d.textContent="+ "+(h.name||"Someone");d.onclick=function(){names[h.id]=h.name||"Someone";partners[h.id]=1;dmWith=h.id;find.value="";hits.innerHTML="";renderChs();load()};hits.appendChild(d)})}
+find.oninput=doFind;find.onfocus=doFind;
+/* search messages */
+var qEl=document.getElementById("q");
+async function runSearch(){var q=qEl.value.trim().toLowerCase();if(!q){load();return}if(!db)return;
+  if(unsub){unsub();unsub=null}
+  document.getElementById("title").textContent="Search";msgs.innerHTML="";
+  var src=CHANNELS.map(function(n){return{label:"#"+n,p:"ch/"+n+"/messages",go:function(){cur=n;dmWith=null}}});
+  if(me)Object.keys(partners).forEach(function(id){src.push({label:"@ "+(names[id]||"Someone"),p:dmPath(id),go:function(){dmWith=id}})});
+  var out=[];
+  await Promise.all(src.map(async function(s){try{var r=await db.collection(s.p).orderBy("ts","asc").limit(500).get();r.docs.forEach(function(d){var m=d.data();if(String(m.text||"").toLowerCase().indexOf(q)>-1)out.push({s:s,m:m})})}catch(e){}}));
+  out.sort(function(a,b){return b.m.ts-a.m.ts});
+  var ids=[...new Set(out.map(function(o){return o.m.uid}))];for(var i=0;i<ids.length;i++)await nameOf(ids[i]);
+  msgs.innerHTML="";
+  if(!out.length){note("No messages found for “"+qEl.value.trim()+"”.");return}
+  out.slice(0,50).forEach(function(o){var d=document.createElement("div");d.className="hit";var h=document.createElement("small");h.textContent=o.s.label+" · "+(names[o.m.uid]||"Someone")+" · "+new Date(o.m.ts).toLocaleString();var x=document.createElement("div");x.textContent=o.m.text;d.appendChild(h);d.appendChild(x);d.onclick=function(){o.s.go();qEl.value="";renderChs();load()};msgs.appendChild(d)})}
+qEl.onkeydown=function(e){if(e.key==="Enter")runSearch()};
+qEl.oninput=function(){if(!qEl.value)load()};
+renderChs();load();
+/* presence */
+function renderPeers(list){var p=document.getElementById("peers");p.innerHTML="";list.forEach(function(x){var d=document.createElement("div");d.className="peer";d.textContent=(x.isMe?"You":(x.presence&&x.presence.name)||"Guest")+(x.presence&&x.presence.call?" 🎧":"");p.appendChild(d);if(x.isMe)myPeer=x.peer})}
+async function setName(){if(!room)return;var n=me?await nameOf(me):"Guest";room.presence({name:n,call:inCall})}
+if(room){room.onPeers(function(c){renderPeers(c.peers);c.left.forEach(function(p){closePc(p.peer)})});await setName();
+  room.on("rtc",handleRtc)}
+/* calls */
+function tile(pid,stream,muted){var v=document.getElementById("v"+pid);if(!v){v=document.createElement("video");v.id="v"+pid;v.autoplay=true;v.playsInline=true;document.getElementById("call").appendChild(v)}v.muted=!!muted;v.srcObject=stream}
+function closePc(pid){if(pcs[pid]){pcs[pid].close();delete pcs[pid]}var v=document.getElementById("v"+pid);if(v)v.remove()}
+function mkPc(pid){var pc=new RTCPeerConnection({iceServers:[{urls:"stun:stun.l.google.com:19302"}]});pcs[pid]=pc;
+  local.getTracks().forEach(function(t){pc.addTrack(t,local)});
+  pc.onicecandidate=function(e){if(e.candidate)room.emit("rtc",{to:pid,k:"ice",c:e.candidate})};
+  pc.ontrack=function(e){tile(pid,e.streams[0],false)};
+  pc.onconnectionstatechange=function(){if(pc.connectionState==="failed")closePc(pid)};
+  return pc}
+async function handleRtc(m){if(m.isMe||!inCall||!m.data||m.data.to!==myPeer)return;var d=m.data,pid=m.peer;
+  try{
+    if(d.k==="offer"){closePc(pid);var pc=mkPc(pid);await pc.setRemoteDescription(d.s);var a=await pc.createAnswer();await pc.setLocalDescription(a);room.emit("rtc",{to:pid,k:"answer",s:pc.localDescription})}
+    else if(d.k==="answer"&&pcs[pid])await pcs[pid].setRemoteDescription(d.s);
+    else if(d.k==="ice"&&pcs[pid])await pcs[pid].addIceCandidate(d.c);
+  }catch(e){console.error(e)}}
+async function join(video){
+  if(!room){note("Live calls need a signed-in claude.ai view.");return}
+  if(inCall)return;
+  try{local=await navigator.mediaDevices.getUserMedia({audio:true,video:video})}catch(e){alert("Couldn’t access your mic/camera: "+e.message);return}
+  inCall=true;document.getElementById("call").style.display="flex";tile("me",local,true);
+  document.getElementById("end").style.display="";document.getElementById("vc").style.display="none";document.getElementById("vid").style.display="none";
+  await setName();
+  room.peers().forEach(async function(p){if(p.isMe||!(p.presence&&p.presence.call))return;
+    try{var pc=mkPc(p.peer);var o=await pc.createOffer();await pc.setLocalDescription(o);room.emit("rtc",{to:p.peer,k:"offer",s:pc.localDescription})}catch(e){console.error(e)}})}
+function leave(){inCall=false;Object.keys(pcs).forEach(closePc);if(local){local.getTracks().forEach(function(t){t.stop()});local=null}
+  var v=document.getElementById("vme");if(v)v.remove();document.getElementById("call").style.display="none";
+  document.getElementById("end").style.display="none";document.getElementById("vc").style.display="";document.getElementById("vid").style.display="";setName()}
+document.getElementById("vc").onclick=function(){join(false)};
+document.getElementById("vid").onclick=function(){join(true)};
+document.getElementById("end").onclick=leave;
+})();
+</script>
+</body>
+</html>
